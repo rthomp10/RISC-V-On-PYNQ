@@ -9,7 +9,7 @@ the PYNQ-Z1 board. You can install this package by running the following command
 
 ``` bash
 
-sudo -H pip3.6 install https://github.com/drichmond/RISC-V-On-PYNQ/
+sudo -H pip install "git+https://github.com/rthomp10/RISC-V-On-PYNQ/"
 
 ```
 
