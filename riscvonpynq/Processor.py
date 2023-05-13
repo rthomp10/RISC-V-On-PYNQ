@@ -33,7 +33,7 @@
 # DAMAGE.
 # ----------------------------------------------------------------------
 import pynq, os, enum, numpy as np, time
-from pynq import Xlnk
+from pynq import buffer
 
 __author__ = "Dustin Richmond"
 __copyright__ = "Copyright 2018, The Regents of the University of California"
@@ -70,7 +70,7 @@ class Processor(pynq.DefaultHierarchy):
                 (cls._reset_name in description['gpio']))
 
     def __init__(self, build_path, reset_value, description, *args):
-        """Return a new Processor object. 
+        """Return a new Processor object.
 
         Parameters
         ----------
@@ -154,7 +154,7 @@ class Processor(pynq.DefaultHierarchy):
             self.__resetPin.write(self.__nreset_value)
 
     def _validate(self, *args):
-        """Validate that all arguments are numpy types. 
+        """Validate that all arguments are numpy types.
 
         Note
         ----
@@ -268,24 +268,24 @@ class Processor(pynq.DefaultHierarchy):
 
     def land(self):
         """Terminate execution on a RISC-V Processor, unload the program and
-        arguments, and return the program's return value (if it terminated). 
-        
+        arguments, and return the program's return value (if it terminated).
+
         Note
         ----
         Any modified data in the program argument buffers will be
         copied back to the original buffer (if applicable) by _unload()
 
-        """        
+        """
         self._reset()
-        self._unload()            
+        self._unload()
         return self._retval
-        
+
     def _unload(self):
         """Unload a program from a RISC-V Processor: Copy any modified
         argument data back to the processor memory space and
-        deallocate any buffers. 
+        deallocate any buffers.
 
-        """        
+        """
         if(not self.__loaded):
             raise RuntimeError('Processor not loaded!')
         self._copyout_args(self.__arg_bufs, self.__args)
@@ -294,12 +294,12 @@ class Processor(pynq.DefaultHierarchy):
         self.__loaded = False
 
     def _copyout_args(self, arg_bufs, args):
-        """Copy argument data back to the processor memory space 
+        """Copy argument data back to the processor memory space
 
-        """        
-        self._validate(*args)        
+        """
+        self._validate(*args)
         for (dest, src) in zip(args, arg_bufs):
-            if isinstance(dest, pynq.xlnk.ContiguousArray):
+            if isinstance(dest, pynq.buffer.ContiguousArray):
                 pass
             elif(isinstance(dest, np.ndarray)):
                 np.copyto(dest, src)
@@ -311,7 +311,7 @@ class Processor(pynq.DefaultHierarchy):
         """Get the return value of a program from the RISC-V Processor's
         stack.
 
-        """        
+        """
         return np.int32(np.uint32(self._mem.read(self._stkidx - 4)))
 
 class MixedProcessor(Processor):
@@ -322,7 +322,7 @@ class MixedProcessor(Processor):
 
     """
     def __init__(self, build_path, reset_value, description, *args):
-        """Return a new MixedProcessor object. 
+        """Return a new MixedProcessor object.
 
         Parameters
         ----------
@@ -338,7 +338,7 @@ class MixedProcessor(Processor):
 
         """
         super().__init__(build_path, reset_value, description, *args)
-        self.__xlnk = Xlnk()        
+        self.__buffer = buffer()
 
     def _dealloc_args(self, arg_bufs, args, argv_buf):
         """Dealloc any CMA Arrays allocated by this class, but do not
@@ -354,18 +354,18 @@ class MixedProcessor(Processor):
             Tuple of np.ndarrays with argument data in the PS memory
             space.
 
-        argv_buf : pynq.xlnk.ContiguousArray
+        argv_buf : pynq.buffer.ContiguousArray
             Buffer containing pointers to each buffer in arg_bufs
 
         Note
         ----
         If a buffer in args is an instance of
-        pynq.xlnk.ContiguousArray this means it was allocated by the
+        pynq.buffer.ContiguousArray this means it was allocated by the
         user and will not be deallocated
 
         """
         self._validate(*args)
-        [ None if isinstance(a, pynq.xlnk.ContiguousArray)
+        [ None if isinstance(a, pynq.buffer.ContiguousArray)
           else cma.freebuffer()
           for (cma, a) in zip(arg_bufs, args) ]
         argv_buf.freebuffer()
@@ -382,21 +382,21 @@ class MixedProcessor(Processor):
         Note
         ----
         If a buffer in args is an instance of
-        pynq.xlnk.ContiguousArray this means it was allocated by the
+        pynq.buffer.ContiguousArray this means it was allocated by the
         user and will not be allocated/copied
 
-        """        
+        """
         self._validate(*args)
-        arg_bufs = [a if isinstance(a, pynq.xlnk.ContiguousArray)
-                     else (self.__xlnk.cma_array(1, a.dtype) if isinstance(a, np.generic)
-                           else self.__xlnk.cma_array(a.shape, a.dtype))
+        arg_bufs = [a if isinstance(a, pynq.buffer.ContiguousArray)
+                     else (self.__buffer.cma_array(1, a.dtype) if isinstance(a, np.generic)
+                           else self.__buffer.cma_array(a.shape, a.dtype))
                      for a in args]
-        [None if isinstance(src, pynq.xlnk.ContiguousArray)
-         else np.copyto(dest, src) 
+        [None if isinstance(src, pynq.buffer.ContiguousArray)
+         else np.copyto(dest, src)
          for (dest, src) in zip(arg_bufs, args)]
-        argv_buf = self.__xlnk.cma_array(len(args), np.uint32)
-        argv_ptr = self.__xlnk.cma_get_phy_addr(argv_buf.pointer)
-        arg_ptrs = [self.__xlnk.cma_get_phy_addr(pya.pointer) for pya in arg_bufs]
+        argv_buf = self.__buffer.cma_array(len(args), np.uint32)
+        argv_ptr = self.__buffer.cma_get_phy_addr(argv_buf.pointer)
+        arg_ptrs = [self.__buffer.cma_get_phy_addr(pya.pointer) for pya in arg_bufs]
         argv_buf[:] = arg_ptrs
         return (argv_buf, argv_ptr, arg_bufs, arg_ptrs)
 
@@ -408,7 +408,7 @@ class BramProcessor(Processor):
 
     """
     def __init__(self, build_path, reset_value, description, *args):
-        """Return a new BramProcessor object. 
+        """Return a new BramProcessor object.
 
         Parameters
         ----------
@@ -424,8 +424,8 @@ class BramProcessor(Processor):
 
         Note
         ----
-        Since the Processor isn't connected to DDR we divide the BRAM 
-        memory in half, and use the "Upper" half for arguments 
+        Since the Processor isn't connected to DDR we divide the BRAM
+        memory in half, and use the "Upper" half for arguments
         (see __argptr and _stkidx)
 
         """
@@ -472,9 +472,9 @@ class BramProcessor(Processor):
             Tuple of np.ndarrays with argument data in the PS memory
             space.
 
-        """        
+        """
         self._validate(*args)
-        arg_ptrs, arg_bufs = zip(*[ self._alloc_buf(arg.size, arg.dtype) 
+        arg_ptrs, arg_bufs = zip(*[ self._alloc_buf(arg.size, arg.dtype)
                                     for arg in args ])
         argv_ptr, argv_buf = self._alloc_buf(len(args), np.uint32)
         [ np.copyto(dest, src) for (dest, src) in zip(arg_bufs, args) ]
